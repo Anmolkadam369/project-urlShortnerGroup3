@@ -2,6 +2,28 @@ const urlModel = require("../model/urlModel")
 const shortid = require('shortid');
 const axios = require("axios")
 const isValid = require("../validator/validation")
+const redis = require("redis")
+const { promisify } = require("util")
+
+const redisClient = redis.createClient(
+    13190,
+    "redis-13190.c301.ap-south-1-1.ec2.cloud.redislabs.com",
+    { no_ready_check: true }
+);
+redisClient.auth("gkiOIPkytPI3ADi14jHMSWkZEo2J5TDG", function (err) {
+    if (err) throw err;
+});
+
+redisClient.on("connect", async function () {
+    console.log("Connected to Redis..");
+});
+
+
+// const SET_ASYNC = promisify(redisClient.SET).bind(redisClient);
+// const GET_ASYNC = promisify(redisClient.GET).bind(redisClient);
+const GETEX_ASYNC = promisify(redisClient.GETEX).bind(redisClient);
+const SETEX_ASYNC = promisify(redisClient.SETEX).bind(redisClient);
+
 
 const urlCreate = async function (req, res) {
     try {
@@ -12,15 +34,21 @@ const urlCreate = async function (req, res) {
 
         data.longUrl = data.longUrl.trim()
         if (Object.values(data.longUrl) == "") return res.status(400).send({ status: false, message: "No values provided" })
+
         let validationUrl
         await axios.get(data.longUrl)
             .then((res) => { validationUrl = true })
             .catch((error) => { validationUrl = false })
         if (validationUrl === false || !isValid.isValidLink(data.longUrl)) return res.status(400).send({ status: false, message: "Please provide valid longUrl" })
 
-        let presentInDataBase = await urlModel.findOne({ longUrl: data.longUrl }).select({ _id: 0, __v: 0 });
-        if (presentInDataBase !== null) return res.status(200).send({ message: "shortUrl is Already Generated", data: presentInDataBase });
+        let cachedLongUrlData = await GETEX_ASYNC(`${data.longUrl}`)
+        if (cachedLongUrlData) return res.status(200).send(cachedLongUrlData)
 
+        let presentInDataBase = await urlModel.findOne({ longUrl: data.longUrl }).select({ _id: 0, __v: 0 });
+        if (presentInDataBase !== null) {
+            await SETEX_ASYNC(`${data.longUrl}`,10, JSON.stringify(presentInDataBase))  // before implementing these redis code the document we created for putting that document into cache we are using this line
+            return res.status(200).send({ message: "shortUrl is Already Generated", data: presentInDataBase });
+        }
         let baseUrl = "https://localhost:3000/";
         let urlCode = shortid.generate();
         var shortUrl = baseUrl.concat(urlCode);
@@ -28,6 +56,7 @@ const urlCreate = async function (req, res) {
         let newData = { longUrl: data.longUrl, shortUrl: shortUrl, urlCode: urlCode };
         let createdData = await urlModel.create(newData);
         let finalData = await urlModel.findOne({ urlCode: createdData.urlCode }).select({ _id: 0, __v: 0 })
+        await SETEX_ASYNC(`${data.longUrl}`, 10, JSON.stringify(finalData))
         res.status(201).send({ data: finalData });
     }
     catch (error) { res.status(500).send({ error: error.message }); }
@@ -36,13 +65,16 @@ const urlCreate = async function (req, res) {
 const urlGet = async function (req, res) {
     try {
         let data = req.params.urlCode;
-        if (!shortid.isValid(data) || data.length !== 9) return res.status(400).send({ status: false, msg: "Not valid urlCode" })
+
+        // if (!shortid.isValid(data) || data.length !== 9) return res.status(400).send({ status: false, msg: "Not valid urlCode" })
+        let cachedLongUrlData = await GETEX_ASYNC(`${data}`)
+        if (cachedLongUrlData) return res.send({ "from cache  ": cachedLongUrlData})
         let ans = await urlModel.findOne({ urlCode: data });
         if (ans === null) return res.status(404).send({ status: false, msg: "not found with given data" })
-        // res.status(302).send(`found.Redirecting to ${ans.longUrl}`)
+        await SETEX_ASYNC(`${data}`, JSON.stringify(ans))
         res.status(302).redirect(ans.longUrl)
     }
     catch (err) { res.status(500).send({ status: false, err: err.message }) }
 }
 
-module.exports = { urlCreate, urlGet };
+module.exports = { urlCreate, urlGet };  //ylvxhtyyk
