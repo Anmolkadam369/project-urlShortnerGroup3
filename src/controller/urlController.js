@@ -1,5 +1,6 @@
 const urlModel = require("../model/urlModel")
 const shortid = require('shortid');
+const axios = require("axios")
 const isValid = require("../validator/validation")
 
 const urlCreate = async function (req, res) {
@@ -11,7 +12,11 @@ const urlCreate = async function (req, res) {
 
         data.longUrl = data.longUrl.trim()
         if (Object.values(data.longUrl) == "") return res.status(400).send({ status: false, message: "No values provided" })
-        if (!isValid.isValidLink(data.longUrl)) return res.status(400).send({ status: false, message: "Please provide valid longUrl" })
+        let validationUrl
+        await axios.get(data.longUrl)
+            .then((res) => { validationUrl = true })
+            .catch((error) => { validationUrl = false })
+        if (validationUrl === false || !isValid.isValidLink(data.longUrl)) return res.status(400).send({ status: false, message: "Please provide valid longUrl" })
 
         let presentInDataBase = await urlModel.findOne({ longUrl: data.longUrl }).select({ _id: 0, __v: 0 });
         if (presentInDataBase !== null) return res.status(200).send({ message: "shortUrl is Already Generated", data: presentInDataBase });
