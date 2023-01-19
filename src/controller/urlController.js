@@ -18,7 +18,7 @@ redisClient.on("connect", async function () {
     console.log("Connected to Redis..");
 });
 
-const GETEX_ASYNC = promisify(redisClient.GETEX).bind(redisClient);
+const GET_ASYNC = promisify(redisClient.GET).bind(redisClient);
 const SETEX_ASYNC = promisify(redisClient.SETEX).bind(redisClient);
 
 const urlCreate = async function (req, res) {
@@ -37,8 +37,8 @@ const urlCreate = async function (req, res) {
             .catch((error) => { validationUrl = false })
         if (validationUrl === false || !isValid.isValidLink(data.longUrl)) return res.status(400).send({ status: false, message: "Please provide valid longUrl" })
 
-        let cachedLongUrlData = await GETEX_ASYNC(`${data.longUrl}`)
-        if (cachedLongUrlData) return res.status(200).send(cachedLongUrlData)
+        let cachedLongUrlData = await GET_ASYNC(`${data.longUrl}`)
+        if (cachedLongUrlData) return res.status(200).send(JSON.parse(cachedLongUrlData))
 
         let presentInDataBase = await urlModel.findOne({ longUrl: data.longUrl }).select({ _id: 0, __v: 0 });
         if (presentInDataBase !== null) {
@@ -49,11 +49,10 @@ const urlCreate = async function (req, res) {
         let urlCode = shortid.generate();
         var shortUrl = baseUrl.concat(urlCode);
 
-        let newData = { longUrl: data.longUrl, shortUrl: shortUrl, urlCode: urlCode };
-        let createdData = await urlModel.create(newData);
-        let finalData = await urlModel.findOne({ urlCode: createdData.urlCode }).select({ _id: 0, __v: 0 })
-        await SETEX_ASYNC(`${data.longUrl}`, 10, JSON.stringify(finalData))
-        res.status(201).send({ data: finalData });
+        let newData = { urlCode: urlCode, longUrl: data.longUrl, shortUrl: shortUrl };
+        await urlModel.create(newData);
+        await SETEX_ASYNC(`${data.longUrl}`, 10, JSON.stringify(newData))
+        res.status(201).send({ data: newData });
     }
     catch (error) { res.status(500).send({ error: error.message }); }
 }
@@ -62,14 +61,14 @@ const urlGet = async function (req, res) {
     try {
         let data = req.params.urlCode;
         if (!shortid.isValid(data) || data.length !== 9) return res.status(400).send({ status: false, msg: "Not valid urlCode" })
-        let cachedLongUrlData = await GETEX_ASYNC(`${data}`)
+        let cachedLongUrlData = await GET_ASYNC(`${data}`)
         if (cachedLongUrlData) {
-            let val = cachedLongUrlData.replace(/"/g, '');
-            return res.status(302).redirect(val)
+            let value = cachedLongUrlData.replace(/"/g, '');
+            return res.status(302).redirect(value)
         }
         let ans = await urlModel.findOne({ urlCode: data });
         if (ans === null) return res.status(404).send({ status: false, msg: "not found with given data" })
-        await SETEX_ASYNC(`${data}`, 10, JSON.stringify(ans.longUrl))
+        await SETEX_ASYNC(`${data}`, 86400, JSON.stringify(ans.longUrl))
         res.status(302).redirect(ans.longUrl)
     }
     catch (err) { res.status(500).send({ status: false, err: err.message }) }
