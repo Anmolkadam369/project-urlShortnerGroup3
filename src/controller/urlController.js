@@ -42,7 +42,7 @@ const urlCreate = async function (req, res) {
 
         let presentInDataBase = await urlModel.findOne({ longUrl: data.longUrl }).select({ _id: 0, __v: 0 });
         if (presentInDataBase !== null) {
-            await SETEX_ASYNC(`${data.longUrl}`, 10, JSON.stringify(presentInDataBase))  // before implementing these redis code the document we created for putting that document into cache we are using this line
+            await SETEX_ASYNC(`${data.longUrl}`, 86400, JSON.stringify(presentInDataBase))  // before implementing these redis code the document we created for putting that document into cache we are using this line
             return res.status(200).send({ message: "shortUrl is Already Generated", data: presentInDataBase });
         }
         let baseUrl = "https://localhost:3000/";
@@ -51,7 +51,7 @@ const urlCreate = async function (req, res) {
 
         let newData = { urlCode: urlCode, longUrl: data.longUrl, shortUrl: shortUrl };
         await urlModel.create(newData);
-        await SETEX_ASYNC(`${data.longUrl}`, 10, JSON.stringify(newData))
+        await SETEX_ASYNC(`${data.longUrl}`, 86400, JSON.stringify(newData))
         res.status(201).send({ data: newData });
     }
     catch (error) { res.status(500).send({ error: error.message }); }
