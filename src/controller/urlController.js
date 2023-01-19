@@ -6,11 +6,11 @@ const redis = require("redis")
 const { promisify } = require("util")
 
 const redisClient = redis.createClient(
-    13190,
-    "redis-13190.c301.ap-south-1-1.ec2.cloud.redislabs.com",
+    11768,
+    "redis-11768.c264.ap-south-1-1.ec2.cloud.redislabs.com",
     { no_ready_check: true }
 );
-redisClient.auth("gkiOIPkytPI3ADi14jHMSWkZEo2J5TDG", function (err) {
+redisClient.auth("TPkFHDwHnkiJb7sZx8iDpbGRKqRB8d29", function (err) {
     if (err) throw err;
 });
 
@@ -18,12 +18,8 @@ redisClient.on("connect", async function () {
     console.log("Connected to Redis..");
 });
 
-
-// const SET_ASYNC = promisify(redisClient.SET).bind(redisClient);
-// const GET_ASYNC = promisify(redisClient.GET).bind(redisClient);
 const GETEX_ASYNC = promisify(redisClient.GETEX).bind(redisClient);
 const SETEX_ASYNC = promisify(redisClient.SETEX).bind(redisClient);
-
 
 const urlCreate = async function (req, res) {
     try {
@@ -46,7 +42,7 @@ const urlCreate = async function (req, res) {
 
         let presentInDataBase = await urlModel.findOne({ longUrl: data.longUrl }).select({ _id: 0, __v: 0 });
         if (presentInDataBase !== null) {
-            await SETEX_ASYNC(`${data.longUrl}`,10, JSON.stringify(presentInDataBase))  // before implementing these redis code the document we created for putting that document into cache we are using this line
+            await SETEX_ASYNC(`${data.longUrl}`, 10, JSON.stringify(presentInDataBase))  // before implementing these redis code the document we created for putting that document into cache we are using this line
             return res.status(200).send({ message: "shortUrl is Already Generated", data: presentInDataBase });
         }
         let baseUrl = "https://localhost:3000/";
@@ -65,16 +61,18 @@ const urlCreate = async function (req, res) {
 const urlGet = async function (req, res) {
     try {
         let data = req.params.urlCode;
-
-        // if (!shortid.isValid(data) || data.length !== 9) return res.status(400).send({ status: false, msg: "Not valid urlCode" })
+        if (!shortid.isValid(data) || data.length !== 9) return res.status(400).send({ status: false, msg: "Not valid urlCode" })
         let cachedLongUrlData = await GETEX_ASYNC(`${data}`)
-        if (cachedLongUrlData) return res.send({ "from cache  ": cachedLongUrlData})
+        if (cachedLongUrlData) {
+            let val = cachedLongUrlData.replace(/"/g, '');
+            return res.status(302).redirect(val)
+        }
         let ans = await urlModel.findOne({ urlCode: data });
         if (ans === null) return res.status(404).send({ status: false, msg: "not found with given data" })
-        await SETEX_ASYNC(`${data}`, JSON.stringify(ans))
+        await SETEX_ASYNC(`${data}`, 10, JSON.stringify(ans.longUrl))
         res.status(302).redirect(ans.longUrl)
     }
     catch (err) { res.status(500).send({ status: false, err: err.message }) }
 }
 
-module.exports = { urlCreate, urlGet };  //ylvxhtyyk
+module.exports = { urlCreate, urlGet }; 
