@@ -31,22 +31,25 @@ const urlCreate = async function (req, res) {
         data.longUrl = data.longUrl.trim()
         if (Object.values(data.longUrl) == "") return res.status(400).send({ status: false, message: "No values provided" })
 
-        let validationUrl
-        await axios.get(data.longUrl)
-            .then((res) => { validationUrl = true })
-            .catch((error) => { validationUrl = false })
-        if (validationUrl === false || !isValid.isValidLink(data.longUrl)) return res.status(400).send({ status: false, message: "Please provide valid longUrl" })
-
         let cachedLongUrlData = await GET_ASYNC(`${data.longUrl}`)
         if (cachedLongUrlData) return res.status(200).send(JSON.parse(cachedLongUrlData))
 
+        let validUrl = false;
+        await axios(data.longUrl)
+          .then((res) => {
+            if (res.status == 201 || res.status == 200) validUrl = true;
+          })
+          .catch((err) => {});
+        if (validUrl === false || !isValid.isValidLink(data.longUrl)) return res.status(400).send({ status: false, message: "Please provide valid longUrl" })
+       
         let presentInDataBase = await urlModel.findOne({ longUrl: data.longUrl }).select({ _id: 0, __v: 0 });
         if (presentInDataBase !== null) {
             await SETEX_ASYNC(`${data.longUrl}`, 86400, JSON.stringify(presentInDataBase))  // before implementing these redis code the document we created for putting that document into cache we are using this line
             return res.status(200).send({ message: "shortUrl is Already Generated", data: presentInDataBase });
         }
-        let baseUrl = "https://localhost:3000/";
+        let baseUrl = "http://localhost:3000/";
         let urlCode = shortid.generate();
+        urlCode = urlCode.toLowerCase();
         var shortUrl = baseUrl.concat(urlCode);
 
         let newData = { urlCode: urlCode, longUrl: data.longUrl, shortUrl: shortUrl };
@@ -60,7 +63,7 @@ const urlCreate = async function (req, res) {
 const urlGet = async function (req, res) {
     try {
         let data = req.params.urlCode;
-        if (!shortid.isValid(data) || data.length !== 9) return res.status(400).send({ status: false, msg: "Not valid urlCode" })
+        if (!shortid.isValid(data)) return res.status(400).send({ status: false, msg: "Not valid urlCode" })
         let cachedLongUrlData = await GET_ASYNC(`${data}`)
         if (cachedLongUrlData) {
             let value = cachedLongUrlData.replace(/"/g, '');
